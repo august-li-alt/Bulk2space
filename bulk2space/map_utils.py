@@ -13,6 +13,10 @@ from collections import defaultdict
 
 
 def create_st(generate_sc_data, generate_sc_meta, spot_num, cell_num, gene_num, marker_used):
+    '''
+    从单细胞数据中进行采样, 生成模拟的spot数据, 然后对单细胞数据根据类型筛选特异基因，
+    由此组成新的单细胞训练数据和spot训练数据
+    '''
     sc = generate_sc_data
     sc_ct = generate_sc_meta
     cell_name = sorted(list(set(sc_ct.Cell)))
@@ -22,7 +26,7 @@ def create_st(generate_sc_data, generate_sc_meta, spot_num, cell_num, gene_num, 
     meta = pd.DataFrame(columns=['Cell', 'Celltype', 'Spot'])
     sc_ct.index = sc_ct['Cell']
     for i in range(spot_num):
-        cell_pool = random.sample(cell_name, cell_num)
+        cell_pool = random.sample(cell_name, cell_num)     ##从cell_name中随机挑选cell_num个cell
         while set(cell_pool) == set(last_cell_pool):
             cell_pool = random.sample(cell_name, cell_num)
         last_cell_pool = cell_pool
@@ -30,7 +34,7 @@ def create_st(generate_sc_data, generate_sc_meta, spot_num, cell_num, gene_num, 
         if syn_spot.sum() > 25000:
             syn_spot *= 20000 / syn_spot.sum()
         spot_name = f'spot_{i + 1}'
-        spots.insert(len(spots.columns), spot_name, syn_spot)
+        spots.insert(len(spots.columns), spot_name, syn_spot)   ##在dataframe后插入spot_name列，值为synspot
 
         for cell in cell_pool:
             celltype = sc_ct.loc[cell, 'Cell_type']
@@ -44,7 +48,7 @@ def create_st(generate_sc_data, generate_sc_meta, spot_num, cell_num, gene_num, 
         scanpy.tl.rank_genes_groups(adata, 'Cell_type', method='wilcoxon')
         marker_df = pd.DataFrame(adata.uns['rank_genes_groups']['names']).head(gene_num)
         marker_array = np.array(marker_df)
-        marker_array = np.ravel(marker_array)
+        marker_array = np.ravel(marker_array)       ##将数据拉平为一维
         marker_array = np.unique(marker_array)
         marker = list(marker_array)
         sc = sc.loc[marker, :]
@@ -54,6 +58,14 @@ def create_st(generate_sc_data, generate_sc_meta, spot_num, cell_num, gene_num, 
 
 
 def create_sample(sc, st, meta, multiple):
+    '''
+    sc: dataframe, 单细胞数据 (生成或参考)
+    st: dataframe, 空间转录组数据 (模拟生成的数据)
+    meta: dataframe, 存储每个spot是由哪些单细胞组成
+
+    该函数根据meta文件, 将spot-cell的对应关系打乱, 生成一批负面数据, 用于训练
+    return: 正面数据和负面数据, 由单细胞表达:spot表达:(spot表达-单细胞表达) 组成.
+    '''
     cell_name = meta.Cell.values.tolist()
     spot_name = meta.Spot.values.tolist()
 
@@ -61,6 +73,7 @@ def create_sample(sc, st, meta, multiple):
     all_spot = list(set(meta.Spot))
     wrong_spot_name = []
     for sn in spot_name:
+        ##在这里相当于打乱spots, 及造成负面数据
         last_spot = all_spot.copy()  # --
         last_spot.remove(sn)  # --
         mul_wrong = random.sample(last_spot, multiple)
@@ -115,6 +128,10 @@ def get_data(pos, neg):
 
 def create_data(generate_sc_meta, generate_sc_data, st_data, spot_num, cell_num, top_marker_num, marker_used,
                 mul_train):
+    '''
+    由此创造深度森林的训练数据,主要采用的方法也就是采样模拟的方法生成训练集
+
+    '''
     sc_gene = generate_sc_data._stat_axis.values.tolist()
     st_gene = st_data._stat_axis.values.tolist()
     intersect_gene = list(set(sc_gene).intersection(set(st_gene)))
@@ -129,14 +146,18 @@ def create_data(generate_sc_meta, generate_sc_data, st_data, spot_num, cell_num,
     return xtrain, ytrain
 
 
-def creat_pre_data(st, cell_name, spot_name, spot_indx, cfeat, return_np=False):
+def creat_pre_data(st, cell_name, spot_name, spot_indx, cfeat, return_np=False)->np.ndarray or torch.Tensor:
+    '''
+    在分类模型建立后, 根据实际的spot表达和单细胞表达创造用于预测的数据
+    return: 相对应的特征集合
+    '''
     spot = spot_name[spot_indx]
     spot_feat = st[spot].values
     tlist = np.isnan(spot_feat).tolist()
     tlist = [i for i, x in enumerate(tlist) if x == True]
     assert len(tlist) == 0
 
-    sfeat = np.tile(spot_feat, (len(cell_name), 1))
+    sfeat = np.tile(spot_feat, (len(cell_name), 1))     ##np.tile()是对向量进行复制
     mfeat = sfeat - cfeat
     feat = np.hstack((cfeat, sfeat))
     feat = np.hstack((feat, mfeat))
@@ -156,7 +177,7 @@ def creat_pre_data(st, cell_name, spot_name, spot_indx, cfeat, return_np=False):
 
 def predict_for_one_spot(model, st_test, cell_name, spot_name, spot_indx, cfeat):
     feats = creat_pre_data(st_test, cell_name, spot_name, spot_indx, cfeat, return_np=True)
-    outputs = model.predict_proba(feats)[:, 1]
+    outputs = model.predict_proba(feats)[:, 1]      ##cascadeforestclassifier分类器的api, 用于预测分类概率
     # outputs = np.where(outputs>0.5, 1, 0)
     predict = outputs.tolist()
     return spot_indx, predict
@@ -199,7 +220,7 @@ class DFRunner:
             self.st_test = self.st_test.loc[marker, :]
 
         self.model = CascadeForestClassifier(random_state=random_seed, n_jobs=os.cpu_count() // 4 * 3,
-                                             verbose=0)
+                                             verbose=0)     ##verbose=0代表不显示日志，否则显示日志
 
         breed = self.cell_type['Cell_type']
         breed_np = breed.values
@@ -215,6 +236,9 @@ class DFRunner:
             self.label2cell[cell_type].add(cell_name)
 
     def run(self, xtrain, ytrain, max_cell_in_diff_spot_ratio, k, save_dir, save_name, load_path=None):
+        '''
+        在此进行gcforst训练
+        '''
         if load_path is None:
             print('df training....')
             self.model.fit(xtrain, ytrain)  # train model
@@ -228,6 +252,9 @@ class DFRunner:
         return df_meta, df_spot
 
     def cre_csv(self, max_cell_in_diff_spot_ratio, k):
+        '''
+        用来产生最终的结果
+        '''
         # data
         cell_name = self.sc_test.columns.values.tolist()
         spot_name = self.st_test.columns.tolist()  # list of spot name ['spot_1', 'spot_2', ...]
@@ -245,13 +272,14 @@ class DFRunner:
             cell2spot = defaultdict(set)
             spot2ratio = dict()
 
-            from multiprocessing.pool import Pool
+            from multiprocessing.pool import Pool   ##multiprocessing用于创建多线程
             re_list = []
             process_pool = Pool(8)
 
             print('Calculating scores...')
             for spot_indx in range(len(spot_name)):
                 spot = spot_name[spot_indx]  # spotname
+                ##在此进行二元分类器的分类
                 re_list.append(process_pool.apply_async(predict_for_one_spot, (
                     self.model, self.st_test, cell_name, spot_name, spot_indx, cfeat)))
 
@@ -266,7 +294,7 @@ class DFRunner:
                     score_triple_list.append((c, spot, p))  # (cell, spot, score)
                 spot2ratio[spot] = np.round(ratio[spot_indx] * k)  # [n1, n2, ...]
             # spot2ratio: map spot to cell type ratio in it.
-            score_triple_list = sorted(score_triple_list, key=lambda x: x[2], reverse=True)
+            score_triple_list = sorted(score_triple_list, key=lambda x: x[2], reverse=True)##根据判定分数进行排序
             # sort by score
             for c, spt, score in score_triple_list:
                 # cell name, spot name, score
@@ -305,7 +333,7 @@ class DFRunner:
                     df_spots = pd.concat([df_spots, predict_spot], axis=1)
             return cell_list, spot_list, spot_len, df_spots
 
-        ratio = self.__calc_ratio()  # [spot_num, class_num]
+        ratio = self.__calc_ratio()  # [spot_num, class_num]  在此计算了每个spot的反卷积比例
 
         cell_list, spot_list, spot_len, df_spots = joint_predict(ratio)
         meta = {'Cell': cell_list, 'Spot': spot_list}
@@ -318,7 +346,7 @@ class DFRunner:
         df_meta = df_meta.rename(columns={'xcoord': 'Spot_xcoord', 'ycoord': 'Spot_ycoord'})
 
         coord = self.meta_test[['xcoord', 'ycoord']].to_numpy()
-        nbrs = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(coord)
+        nbrs = NearestNeighbors(n_neighbors=2, algorithm='ball_tree').fit(coord)##根据坐标进行聚类
         distances, indices = nbrs.kneighbors(coord)
         radius = distances[:, -1] / 2
         radius = radius.tolist()
@@ -346,7 +374,9 @@ class DFRunner:
         return df_meta, df_spots
 
     def __calc_ratio(self):
-
+        '''
+        对spot进行反卷积, 生成类型占比
+        '''
         label_devide_data = dict()
         for label, cells in self.label2cell.items():
             label_devide_data[label] = self.sc_test[list(cells)]
@@ -456,7 +486,7 @@ def joint_analysis(dat, batch, mod=None, par_prior=True, proir_plots=False, mean
     keep_rows = list(set(range(dat.shape[0])).difference(set(zero_rows_list)))
     dat_origin = dat
     dat = dat[keep_rows, :]
-    batchmod = pd.get_dummies(batch, drop_first=False, prefix='batch')
+    batchmod = pd.get_dummies(batch, drop_first=False, prefix='batch')##pd.get_dummies()用于构建独热编码
     batchmod['batch_' + ref_batch] = 1
     ref = batchmod.columns.get_loc('batch_' + ref_batch)
     design = np.array(batchmod)
@@ -509,8 +539,8 @@ def joint_analysis(dat, batch, mod=None, par_prior=True, proir_plots=False, mean
 
 
 def knn(data, query, k):
-    tree = KDTree(data)
-    dist, ind = tree.query(query, k)
+    tree = KDTree(data)##建立k-最近邻分类器的树
+    dist, ind = tree.query(query, k)##查询离query最近的k个点
     
     return dist, ind
 

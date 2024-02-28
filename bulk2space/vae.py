@@ -45,7 +45,7 @@ class VAE(nn.Module):
     def forward(self, x, used_device):
         x = x.to(used_device)
         encoder_output = self.encode(x)
-        mu, sigma = torch.chunk(encoder_output, 2, dim=1)  # mu, log_var
+        mu, sigma = torch.chunk(encoder_output, 2, dim=1)  # mu, log_var  ##torch.chunk用于张量分隔
         hidden = torch.randn_like(sigma) + mu * torch.exp(sigma) ** 0.5  # var => std
         x_hat = self.decode(hidden)
         kl_div = 0.5 * torch.sum(torch.exp(sigma) + torch.pow(mu, 2) - 1 - sigma) / (x.shape[0] * x.shape[1])
@@ -75,6 +75,7 @@ class BulkDataset(Dataset):
 
 
 def train_vae(single_cell, label, used_device, batch_size, feature_size, epoch_num, learning_rate, hidden_size, ):
+    ##label为sc标签？
     batch_size = batch_size
     feature_size = feature_size
     epoch_num = epoch_num
@@ -138,6 +139,9 @@ def load_vae(feature_size, hidden_size, path, used_device):
 
 def generate_vae(net, ratio, single_cell, label, breed_2_list, index_2_gene, cell_number_target_num=None,
                  used_device=None):
+    '''
+    使用初步训练好的vae进行单细胞生成
+    '''
     # net in cuda now
     for p in net.parameters():  # reset requires_grad
         p.requires_grad = False  # avoid computation

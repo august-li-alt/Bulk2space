@@ -1,9 +1,9 @@
 import pandas as pd
 import torch
 import numpy as np
-from .utils import load_data, data_process
-from .vae import train_vae, generate_vae, load_vae
-from .map_utils import create_data, DFRunner, joint_analysis, knn
+from utils import load_data, data_process
+from vae import train_vae, generate_vae, load_vae
+from map_utils import create_data, DFRunner, joint_analysis, knn
 import os
 import warnings
 warnings.filterwarnings("ignore")
@@ -168,6 +168,9 @@ class Bulk2Space:
                         map_save_dir='output',  # file_dir
                         map_save_name='map',  # file_name
                         ):
+        '''
+        该函数针对原位杂交(基于图像)的测序结果,将空转数据映射到产生的单细胞数据空间中
+        '''
         input_st_data = pd.read_csv(input_st_data_path, index_col=0)
         input_st_meta = pd.read_csv(input_st_meta_path, index_col=0)
         print('start to process image-based st data...')

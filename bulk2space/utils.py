@@ -3,7 +3,7 @@ import scanpy
 from collections import defaultdict
 import numpy as np
 from scipy.optimize import nnls
-
+import scipy 
 
 def load_data(input_bulk_path,
               input_sc_data_path,
@@ -21,10 +21,10 @@ def load_data(input_bulk_path,
     input_data["input_sc_meta"] = pd.read_csv(input_sc_meta_path, index_col=0)
     # load sc_data.csv file, containing gene expression of each cell
     input_sc_data = pd.read_csv(input_sc_data_path, index_col=0)
-    input_data["sc_gene"] = input_sc_data._stat_axis.values.tolist()
+    input_data["sc_gene"] = input_sc_data.index.values.tolist()
     # load bulk.csv file, containing one column of gene expression in bulk
     input_bulk = pd.read_csv(input_bulk_path, index_col=0)
-    input_data["bulk_gene"] = input_bulk._stat_axis.values.tolist()
+    input_data["bulk_gene"] = input_bulk.index.values.tolist()
     # filter overlapping genes.
     input_data["intersect_gene"] = list(set(input_data["sc_gene"]).intersection(set(input_data["bulk_gene"])))
     input_data["input_sc_data"] = input_sc_data.loc[input_data["intersect_gene"]]
@@ -59,8 +59,9 @@ def data_process(data, top_marker_num, ratio_num):
 
     cell2label = dict()  # map cell-name to breed-id
     label2cell = defaultdict(set)  # map breed-id to cell-names
-    for row in data["input_sc_meta"].itertuples():
-        cell_name = getattr(row, 'Cell')
+    ##将单细胞和类型进行编码为数字
+    for row in data["input_sc_meta"].itertuples():          ##将dataframe迭代为元组类型
+        cell_name = getattr(row, 'Cell')        ##从object中获取属性
         cell_type = label2id[getattr(row, 'Cell_type')]
         cell2label[cell_name] = cell_type
         label2cell[cell_type].add(cell_name)
@@ -81,7 +82,7 @@ def data_process(data, top_marker_num, ratio_num):
         single_cell_matrix.append(single_cell_splitby_breed_np[i].tolist())
 
     single_cell_matrix = np.array(single_cell_matrix)
-    single_cell_matrix = np.transpose(single_cell_matrix)  # (gene_num, label_num)
+    single_cell_matrix = np.transpose(single_cell_matrix)  # (gene_num, label_num)##np.transpose()进行转置
 
     bulk_marker = bulk_marker.values  # (gene_num, 1)
     bulk_rep = bulk_marker.reshape(bulk_marker.shape[0], )
