@@ -1,3 +1,6 @@
+# Bulk2space
+修改"De novo analysis of bulk RNA-seq data at spatially resolved single-cell resolution"文章中提出的bulk2space算法代码，使其更易理解和借鉴
+
 # Bulk2Space v1.0.0
 
 ## De novo analysis of bulk RNA-seq data at spatially resolved single-cell resolution 
@@ -61,4 +64,6 @@ Should you have any questions, please feel free to contact the co-first authors 
 
 ## References
 Liao, J., Qian, J., Fang, Y. et al. De novo analysis of bulk RNA-seq data at spatially resolved single-cell resolution. Nat Commun 13, 6498 (2022). [https://doi.org/10.1038/s41467-022-34271-z](https://doi.org/10.1038/s41467-022-34271-z)
+
+
 
